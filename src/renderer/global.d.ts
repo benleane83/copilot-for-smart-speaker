@@ -2,6 +2,7 @@
 
 interface ElectronAPI {
   sendUserSpeech: (text: string) => void;
+  cancelCopilot: () => void;
   endConversation: () => void;
   getConversationHistory: () => Promise<any[]>;
   getConfig: () => Promise<{

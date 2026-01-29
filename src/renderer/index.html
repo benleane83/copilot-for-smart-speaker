@@ -141,6 +141,32 @@
       display: none;
     }
 
+    #stop-button {
+      margin-top: 20px;
+      padding: 12px 24px;
+      font-size: 16px;
+      border: none;
+      border-radius: 24px;
+      background: rgba(255, 107, 107, 0.8);
+      color: white;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: none;
+    }
+
+    #stop-button:hover {
+      background: rgba(255, 107, 107, 1);
+      transform: scale(1.05);
+    }
+
+    #stop-button:active {
+      transform: scale(0.95);
+    }
+
+    #stop-button.visible {
+      display: inline-block;
+    }
+
     footer {
       padding: 20px;
       text-align: center;
@@ -166,6 +192,8 @@
     <div id="transcript-area">
       <!-- Conversation messages will appear here -->
     </div>
+
+    <button id="stop-button">⏹️ Stop</button>
 
     <div id="error"></div>
   </main>

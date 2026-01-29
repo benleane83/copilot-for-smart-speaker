@@ -53,7 +53,7 @@ async function initializeCopilot(): Promise<void> {
     copilotClient = new CopilotClient({
       cliPath: config.copilot.cliPath,
       enableFileTools: false,
-      enableWebTools: false,
+      enableWebTools: true,
     });
 
     conversationManager = new ConversationManager(copilotClient, {
@@ -99,6 +99,12 @@ function setupIpcHandlers(): void {
       logger.error('Failed to process user speech', error);
       mainWindow?.webContents.send('copilot-error', (error as Error).message);
     }
+  });
+
+  // Handle request to cancel current Copilot request
+  ipcMain.on('cancel-copilot', () => {
+    logger.info('Cancelling Copilot request');
+    copilotClient?.cancel();
   });
 
   // Handle request to end conversation

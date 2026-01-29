@@ -5,6 +5,7 @@ const statusEl = document.getElementById('status')!;
 const waveformEl = document.getElementById('waveform')!;
 const transcriptArea = document.getElementById('transcript-area')!;
 const errorEl = document.getElementById('error')!;
+const stopButton = document.getElementById('stop-button')!;
 
 // Speech components
 let wakewordDetector: WakewordDetector | null = null;
@@ -16,6 +17,8 @@ let hasKeywordModel = false;
 let isListeningForWakeword = false;
 let isListeningForCommand = false;
 let conversationActive = false;
+let isSpeaking = false;
+let isProcessing = false;
 
 /**
  * Wait for the Azure Speech SDK to load from CDN
@@ -51,6 +54,7 @@ function waitForSpeechSDK(): Promise<void> {
 
 /**
  * Append a message to the transcript area
+ * Only keeps the latest user message and assistant response
  */
 function addMessage(text: string, type: 'user' | 'assistant'): void {
   const messageEl = document.createElement('div');
@@ -67,6 +71,15 @@ function addMessage(text: string, type: 'user' | 'assistant'): void {
   messageEl.appendChild(textEl);
   transcriptArea.appendChild(messageEl);
   
+  // Keep only the latest 2 messages (1 user + 1 assistant)
+  const messages = transcriptArea.querySelectorAll('.message');
+  if (messages.length > 2) {
+    // Remove oldest messages, keeping only the last 2
+    for (let i = 0; i < messages.length - 2; i++) {
+      messages[i].remove();
+    }
+  }
+  
   // Scroll to bottom
   transcriptArea.scrollTop = transcriptArea.scrollHeight;
 }
@@ -80,6 +93,48 @@ function showError(message: string): void {
   setTimeout(() => {
     errorEl.style.display = 'none';
   }, 5000);
+}
+
+/**
+ * Show or hide the stop button
+ */
+function setStopButtonVisible(visible: boolean): void {
+  if (visible) {
+    stopButton.classList.add('visible');
+  } else {
+    stopButton.classList.remove('visible');
+  }
+}
+
+/**
+ * Stop current operation (TTS or processing)
+ */
+async function stopCurrentOperation(): Promise<void> {
+  console.log('Stop button pressed');
+  
+  // Cancel Copilot request if processing
+  if (isProcessing) {
+    window.electronAPI.cancelCopilot();
+  }
+  
+  // Stop TTS if speaking
+  if (isSpeaking && tts) {
+    tts.stop();
+    isSpeaking = false;
+  }
+  
+  // Stop speech recognition if listening
+  if (isListeningForCommand && stt) {
+    await stt.stopContinuousRecognition();
+    isListeningForCommand = false;
+  }
+  
+  // Reset state
+  isProcessing = false;
+  setStopButtonVisible(false);
+  
+  // Go back to wakeword detection
+  await startWakewordDetection();
 }
 
 /**
@@ -144,6 +199,14 @@ async function initializeSpeech(): Promise<void> {
 
     stt.on('speechRecognized', onSpeechRecognized);
     stt.on('speechRecognizing', (text: string) => {
+      // If voice is detected while speaking, interrupt TTS
+      if (isSpeaking && text.trim().length > 0) {
+        console.log('Voice detected during TTS, interrupting...');
+        if (tts) {
+          tts.stop();
+          isSpeaking = false;
+        }
+      }
       updateStatus(`Listening: "${text}..."`, true, true);
     });
     stt.on('error', (error: Error) => {
@@ -205,6 +268,7 @@ async function startSpeechRecognition(): Promise<void> {
     await stt.startContinuousRecognition();
     isListeningForCommand = true;
     conversationActive = true;
+    setStopButtonVisible(true);
     updateStatus('Listening for your command...', true);
     console.log('Started speech recognition');
   } catch (error) {
@@ -228,6 +292,8 @@ async function onSpeechRecognized(text: string): Promise<void> {
     isListeningForCommand = false;
   }
   
+  isProcessing = true;
+  setStopButtonVisible(true);
   updateStatus('Processing with Copilot...', false);
   
   // Send to main process for Copilot processing
@@ -241,7 +307,11 @@ async function onCopilotResponse(response: string): Promise<void> {
   console.log('Copilot response:', response);
   addMessage(response, 'assistant');
   
+  isProcessing = false;
+  
   // Speak the response
+  isSpeaking = true;
+  setStopButtonVisible(true);
   updateStatus('Speaking response...', false);
   
   try {
@@ -250,6 +320,8 @@ async function onCopilotResponse(response: string): Promise<void> {
       await tts.speakSsml(ssml);
     }
     
+    isSpeaking = false;
+    setStopButtonVisible(false);
     // If conversation is still active, keep listening
     if (conversationActive) {
       await startSpeechRecognition();
@@ -292,13 +364,22 @@ window.electronAPI.onCopilotResponse((response: string) => {
 window.electronAPI.onCopilotError((error: string) => {
   console.error('Copilot error:', error);
   showError(error);
+  isProcessing = false;
+  isSpeaking = false;
+  setStopButtonVisible(false);
   startWakewordDetection();
 });
 
 window.electronAPI.onConversationEnded(() => {
   console.log('Conversation ended');
   conversationActive = false;
+  setStopButtonVisible(false);
   startWakewordDetection();
+});
+
+// Set up stop button listener
+stopButton.addEventListener('click', () => {
+  stopCurrentOperation();
 });
 
 // Start the application

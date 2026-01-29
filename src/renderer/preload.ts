@@ -7,6 +7,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Send user speech to main process
   sendUserSpeech: (text: string) => ipcRenderer.send('user-speech', text),
   
+  // Cancel current Copilot request
+  cancelCopilot: () => ipcRenderer.send('cancel-copilot'),
+  
   // End the current conversation
   endConversation: () => ipcRenderer.send('end-conversation'),
   
@@ -42,6 +45,7 @@ declare global {
   interface Window {
     electronAPI: {
       sendUserSpeech: (text: string) => void;
+      cancelCopilot: () => void;
       endConversation: () => void;
       getConversationHistory: () => Promise<any[]>;
       getConfig: () => Promise<any>;

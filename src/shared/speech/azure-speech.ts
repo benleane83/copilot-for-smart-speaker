@@ -477,6 +477,23 @@ export class TextToSpeech extends EventEmitter {
   }
 
   /**
+   * Stop current speech synthesis
+   */
+  stop(): void {
+    if (this.synthesizer) {
+      try {
+        // Stop synthesis immediately
+        this.synthesizer.close();
+        this.synthesizer = null;
+        this.audioConfig = null;
+        logger.info('TTS synthesis stopped');
+      } catch (error) {
+        logger.error('Error stopping TTS', error);
+      }
+    }
+  }
+
+  /**
    * Clean up synthesizer resources
    */
   close(): void {
