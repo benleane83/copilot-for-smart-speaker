@@ -112,26 +112,31 @@ function setStopButtonVisible(visible: boolean): void {
 async function stopCurrentOperation(): Promise<void> {
   console.log('Stop button pressed');
   
+  // Prevent concurrent stop operations
+  const wasProcessing = isProcessing;
+  const wasSpeaking = isSpeaking;
+  const wasListening = isListeningForCommand;
+  
+  // Reset state immediately
+  isProcessing = false;
+  isSpeaking = false;
+  setStopButtonVisible(false);
+  
   // Cancel Copilot request if processing
-  if (isProcessing) {
+  if (wasProcessing) {
     window.electronAPI.cancelCopilot();
   }
   
   // Stop TTS if speaking
-  if (isSpeaking && tts) {
+  if (wasSpeaking && tts) {
     tts.stop();
-    isSpeaking = false;
   }
   
   // Stop speech recognition if listening
-  if (isListeningForCommand && stt) {
+  if (wasListening && stt) {
     await stt.stopContinuousRecognition();
     isListeningForCommand = false;
   }
-  
-  // Reset state
-  isProcessing = false;
-  setStopButtonVisible(false);
   
   // Go back to wakeword detection
   await startWakewordDetection();
@@ -200,7 +205,8 @@ async function initializeSpeech(): Promise<void> {
     stt.on('speechRecognized', onSpeechRecognized);
     stt.on('speechRecognizing', (text: string) => {
       // If voice is detected while speaking, interrupt TTS
-      if (isSpeaking && text.trim().length > 0) {
+      // Only interrupt if we have substantial input to avoid false positives from noise
+      if (isSpeaking && text.trim().length > 3) {
         console.log('Voice detected during TTS, interrupting...');
         if (tts) {
           tts.stop();
@@ -364,8 +370,10 @@ window.electronAPI.onCopilotResponse((response: string) => {
 window.electronAPI.onCopilotError((error: string) => {
   console.error('Copilot error:', error);
   showError(error);
+  // Clean up all state on error
   isProcessing = false;
   isSpeaking = false;
+  isListeningForCommand = false;
   setStopButtonVisible(false);
   startWakewordDetection();
 });
