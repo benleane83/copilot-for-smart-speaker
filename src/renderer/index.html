@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' blob: https://aka.ms https://csspeechstorage.blob.core.windows.net; worker-src 'self' blob: data:">
+  <title>Copilot Smart Speaker</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #fff;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    header {
+      padding: 20px;
+      background: rgba(0, 0, 0, 0.2);
+      backdrop-filter: blur(10px);
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 600;
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+    }
+
+    #status {
+      font-size: 18px;
+      margin-bottom: 30px;
+      opacity: 0.9;
+    }
+
+    #waveform {
+      width: 200px;
+      height: 200px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 30px;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s ease;
+    }
+
+    #waveform.listening {
+      animation: pulse 2s ease-in-out infinite;
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    #waveform.detecting {
+      animation: pulse-active 0.5s ease-in-out infinite;
+      background: rgba(103, 234, 103, 0.3);
+      box-shadow: 0 0 30px rgba(103, 234, 103, 0.6);
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.8; }
+      50% { transform: scale(1.1); opacity: 1; }
+    }
+
+    @keyframes pulse-active {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 30px rgba(103, 234, 103, 0.6); }
+      50% { transform: scale(1.15); box-shadow: 0 0 50px rgba(103, 234, 103, 0.9); }
+    }
+
+    #waveform-inner {
+      width: 150px;
+      height: 150px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 48px;
+      transition: all 0.3s ease;
+    }
+
+    #waveform.detecting #waveform-inner {
+      background: rgba(103, 234, 103, 0.4);
+      font-size: 52px;
+    }
+
+    #transcript-area {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 20px;
+      padding: 30px;
+      max-width: 600px;
+      width: 100%;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .message {
+      margin-bottom: 15px;
+      padding: 12px 16px;
+      border-radius: 12px;
+      line-height: 1.5;
+    }
+
+    .message.user {
+      background: rgba(103, 126, 234, 0.3);
+      margin-left: 20px;
+    }
+
+    .message.assistant {
+      background: rgba(118, 75, 162, 0.3);
+      margin-right: 20px;
+    }
+
+    .message-label {
+      font-size: 12px;
+      opacity: 0.7;
+      margin-bottom: 4px;
+    }
+
+    #error {
+      color: #ff6b6b;
+      background: rgba(255, 107, 107, 0.1);
+      padding: 12px;
+      border-radius: 8px;
+      margin-top: 20px;
+      display: none;
+    }
+
+    #stop-button {
+      margin-top: 20px;
+      padding: 12px 24px;
+      font-size: 16px;
+      border: none;
+      border-radius: 24px;
+      background: rgba(255, 107, 107, 0.8);
+      color: white;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: none;
+    }
+
+    #stop-button:hover {
+      background: rgba(255, 107, 107, 1);
+      transform: scale(1.05);
+    }
+
+    #stop-button:active {
+      transform: scale(0.95);
+    }
+
+    #stop-button.visible {
+      display: inline-block;
+    }
+
+    footer {
+      padding: 20px;
+      text-align: center;
+      opacity: 0.7;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🎤 Copilot Smart Speaker</h1>
+  </header>
+
+  <main>
+    <div id="status">Initializing...</div>
+    
+    <div id="waveform">
+      <div id="waveform-inner">
+        🎙️
+      </div>
+    </div>
+
+    <div id="transcript-area">
+      <!-- Conversation messages will appear here -->
+    </div>
+
+    <button id="stop-button" aria-label="Stop current operation">⏹️ Stop</button>
+
+    <div id="error"></div>
+  </main>
+
+  <footer>
+    <p>Say the wakeword or speak to interact • Press Ctrl+C in terminal to exit</p>
+  </footer>
+
+  <!-- Load Azure Speech SDK from CDN first -->
+  <script src="https://aka.ms/csspeech/jsbrowserpackageraw"></script>
+  
+  <!-- Then load our renderer module -->
+  <script type="module" src="renderer.js"></script>
+</body>
+</html>
