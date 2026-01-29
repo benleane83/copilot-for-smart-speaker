@@ -27,3 +27,4 @@ coverage/
 
 # Keyword model files (may contain sensitive training data)
 *.table
+node_modules
