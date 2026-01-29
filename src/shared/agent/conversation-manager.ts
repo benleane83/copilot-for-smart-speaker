@@ -84,6 +84,8 @@ export class ConversationManager {
       this.currentSession = null;
     }
 
+    void this.client.endSession();
+
     if (this.contextTimeoutId) {
       clearTimeout(this.contextTimeoutId);
       this.contextTimeoutId = null;

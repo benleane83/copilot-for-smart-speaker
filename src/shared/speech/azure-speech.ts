@@ -1,5 +1,16 @@
-import * as sdk from 'microsoft-cognitiveservices-speech-sdk';
-import { EventEmitter } from 'events';
+// Access the Azure Speech SDK from the global window object
+// It's loaded via CDN script tag in index.html
+declare global {
+  interface Window {
+    SpeechSDK: any;
+  }
+}
+
+// In browser context (renderer), use the global SDK
+// In Node.js context (main process), this won't be used
+const sdk = typeof window !== 'undefined' ? window.SpeechSDK : {} as any;
+
+import { EventEmitter } from '../events.js';
 import { createLogger, LogLevel } from '../config/logger.js';
 
 const logger = createLogger('AzureSpeech');
@@ -31,10 +42,10 @@ export interface AzureSpeechConfig {
  * Wakeword detector using Azure Keyword Recognition
  */
 export class WakewordDetector extends EventEmitter {
-  private config: sdk.SpeechConfig;
-  private audioConfig: sdk.AudioConfig | null = null;
-  private recognizer: sdk.SpeechRecognizer | null = null;
-  private keywordModel: sdk.KeywordRecognitionModel | null = null;
+  private config: any;
+  private audioConfig: any | null = null;
+  private recognizer: any | null = null;
+  private keywordModel: any | null = null;
   private isListening = false;
 
   constructor(azureConfig: AzureSpeechConfig) {
@@ -62,10 +73,24 @@ export class WakewordDetector extends EventEmitter {
     this.audioConfig = sdk.AudioConfig.fromDefaultMicrophoneInput();
     this.recognizer = new sdk.SpeechRecognizer(this.config, this.audioConfig);
 
+    this.recognizer.recognizing = (_sender, event) => {
+      if (!this.keywordModel && event.result.reason === sdk.ResultReason.RecognizingSpeech) {
+        this.emit('speechRecognizing', event.result.text);
+      }
+    };
+
     this.recognizer.recognized = (_sender, event) => {
-      if (event.result.reason === sdk.ResultReason.RecognizedKeyword) {
+      if (this.keywordModel && event.result.reason === sdk.ResultReason.RecognizedKeyword) {
         logger.info('Wakeword detected');
         this.emit('wakewordDetected');
+        return;
+      }
+
+      if (!this.keywordModel && event.result.reason === sdk.ResultReason.RecognizedSpeech) {
+        if (event.result.text && event.result.text.trim().length > 0) {
+          logger.info('Speech detected (no keyword model)');
+          this.emit('wakewordDetected');
+        }
       }
     };
 
@@ -176,9 +201,9 @@ export class WakewordDetector extends EventEmitter {
  * Speech-to-Text recognizer with continuous recognition support
  */
 export class SpeechToText extends EventEmitter {
-  private config: sdk.SpeechConfig;
-  private audioConfig: sdk.AudioConfig | null = null;
-  private recognizer: sdk.SpeechRecognizer | null = null;
+  private config: any;
+  private audioConfig: any | null = null;
+  private recognizer: any | null = null;
   private isRecognizing = false;
 
   constructor(azureConfig: AzureSpeechConfig) {
@@ -341,9 +366,9 @@ export class SpeechToText extends EventEmitter {
  * Text-to-Speech synthesizer with SSML support
  */
 export class TextToSpeech extends EventEmitter {
-  private config: sdk.SpeechConfig;
-  private audioConfig: sdk.AudioConfig | null = null;
-  private synthesizer: sdk.SpeechSynthesizer | null = null;
+  private config: any;
+  private audioConfig: any | null = null;
+  private synthesizer: any | null = null;
   private voiceName: string;
 
   constructor(azureConfig: AzureSpeechConfig) {
