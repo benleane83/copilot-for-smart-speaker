@@ -367,9 +367,13 @@ export class SpeechToText extends EventEmitter {
  */
 export class TextToSpeech extends EventEmitter {
   private config: any;
-  private audioConfig: any | null = null;
   private synthesizer: any | null = null;
   private voiceName: string;
+  private currentAudio: HTMLAudioElement | null = null;
+  private activeSynthesisReject: ((reason: Error) => void) | null = null;
+  private audioContext: AudioContext | null = null;
+  private currentSource: AudioBufferSourceNode | null = null;
+  private stopTime: number = 0;
 
   constructor(azureConfig: AzureSpeechConfig) {
     super();
@@ -379,6 +383,9 @@ export class TextToSpeech extends EventEmitter {
     );
     this.voiceName = azureConfig.voiceName || 'en-US-JennyNeural';
     this.config.speechSynthesisVoiceName = this.voiceName;
+    
+    // Initialize Web Audio API context for low-latency playback
+    this.audioContext = new AudioContext();
   }
 
   /**
@@ -386,8 +393,8 @@ export class TextToSpeech extends EventEmitter {
    */
   private initSynthesizer(): void {
     if (!this.synthesizer) {
-      this.audioConfig = sdk.AudioConfig.fromDefaultSpeakerOutput();
-      this.synthesizer = new sdk.SpeechSynthesizer(this.config, this.audioConfig);
+      // Use null audio config to synthesize to in-memory data
+      this.synthesizer = new sdk.SpeechSynthesizer(this.config, null);
     }
   }
 
@@ -398,12 +405,21 @@ export class TextToSpeech extends EventEmitter {
     this.initSynthesizer();
 
     return new Promise((resolve, reject) => {
+      this.activeSynthesisReject = reject;
+
       this.synthesizer!.speakTextAsync(
         text,
         (result) => {
+          this.activeSynthesisReject = null;
           if (result.reason === sdk.ResultReason.SynthesizingAudioCompleted) {
             logger.info('Speech synthesis completed', { textLength: text.length });
-            resolve();
+            // Play the audio through HTML5 Audio element
+            this.playAudioData(result.audioData)
+              .then(resolve)
+              .catch(reject);
+          } else if (result.reason === sdk.ResultReason.Canceled) {
+            logger.info('Speech synthesis canceled');
+            reject(new Error('Synthesis stopped'));
           } else {
             const errorMessage = sdk.ResultReason[result.reason];
             logger.error('Speech synthesis failed', new Error(errorMessage));
@@ -411,6 +427,7 @@ export class TextToSpeech extends EventEmitter {
           }
         },
         (error) => {
+          this.activeSynthesisReject = null;
           logger.error('Speech synthesis error', error);
           reject(new Error(error));
         }
@@ -425,12 +442,23 @@ export class TextToSpeech extends EventEmitter {
     this.initSynthesizer();
 
     return new Promise((resolve, reject) => {
+      // Store reject function so we can call it from stop()
+      this.activeSynthesisReject = reject;
+
       this.synthesizer!.speakSsmlAsync(
         ssml,
         (result) => {
+          this.activeSynthesisReject = null;
           if (result.reason === sdk.ResultReason.SynthesizingAudioCompleted) {
             logger.info('SSML synthesis completed');
-            resolve();
+            // Play the audio through HTML5 Audio element
+            this.playAudioData(result.audioData)
+              .then(resolve)
+              .catch(reject);
+          } else if (result.reason === sdk.ResultReason.Canceled) {
+            // Synthesis was canceled (stopped)
+            logger.info('SSML synthesis canceled');
+            reject(new Error('Synthesis stopped'));
           } else {
             const errorMessage = sdk.ResultReason[result.reason];
             logger.error('SSML synthesis failed', new Error(errorMessage));
@@ -438,11 +466,77 @@ export class TextToSpeech extends EventEmitter {
           }
         },
         (error) => {
+          this.activeSynthesisReject = null;
           logger.error('SSML synthesis error', error);
           reject(new Error(error));
         }
       );
     });
+  }
+
+  /**
+   * Play audio data through Web Audio API for instant stop capability
+   */
+  private async playAudioData(audioData: ArrayBuffer): Promise<void> {
+    if (!this.audioContext) {
+      this.audioContext = new AudioContext();
+    }
+
+    return new Promise((resolve, reject) => {
+      // Stop any currently playing audio
+      this.stopAudioPlayback();
+
+      // Decode audio data
+      this.audioContext!.decodeAudioData(
+        audioData.slice(0), // Create a copy of the buffer
+        (audioBuffer) => {
+          try {
+            // Create audio source
+            this.currentSource = this.audioContext!.createBufferSource();
+            this.currentSource.buffer = audioBuffer;
+            this.currentSource.connect(this.audioContext!.destination);
+
+            // Set up completion handler
+            this.currentSource.onended = () => {
+              // Only resolve if we played to the end (not stopped)
+              if (this.currentSource) {
+                this.currentSource = null;
+                logger.debug('Audio playback completed');
+                resolve();
+              }
+            };
+
+            // Start playback immediately
+            this.currentSource.start(0);
+            logger.debug('Audio playback started');
+          } catch (error) {
+            this.currentSource = null;
+            reject(error);
+          }
+        },
+        (error) => {
+          logger.error('Audio decode error', error);
+          reject(new Error('Failed to decode audio data'));
+        }
+      );
+    });
+  }
+
+  /**
+   * Stop audio playback immediately
+   */
+  private stopAudioPlayback(): void {
+    if (this.currentSource) {
+      try {
+        this.currentSource.stop();
+        this.currentSource.disconnect();
+        this.currentSource = null;
+        logger.debug('Audio source stopped');
+      } catch (error) {
+        // Source might already be stopped
+        this.currentSource = null;
+      }
+    }
   }
 
   /**
@@ -477,15 +571,23 @@ export class TextToSpeech extends EventEmitter {
   }
 
   /**
-   * Stop current speech synthesis
+   * Stop current speech synthesis and playback
    */
   stop(): void {
+    // Stop audio playback immediately
+    this.stopAudioPlayback();
+
+    // Reject any active synthesis promise
+    if (this.activeSynthesisReject) {
+      this.activeSynthesisReject(new Error('Synthesis stopped by user'));
+      this.activeSynthesisReject = null;
+    }
+    
+    // Clean up synthesizer
     if (this.synthesizer) {
       try {
-        // Stop synthesis immediately
         this.synthesizer.close();
         this.synthesizer = null;
-        this.audioConfig = null;
         logger.info('TTS synthesis stopped');
       } catch (error) {
         logger.error('Error stopping TTS', error);
@@ -497,11 +599,13 @@ export class TextToSpeech extends EventEmitter {
    * Clean up synthesizer resources
    */
   close(): void {
-    if (this.synthesizer) {
-      this.synthesizer.close();
-      this.synthesizer = null;
+    this.stop();
+    
+    if (this.audioContext) {
+      this.audioContext.close();
+      this.audioContext = null;
     }
-    this.audioConfig = null;
+    
     logger.debug('TTS resources cleaned up');
   }
 

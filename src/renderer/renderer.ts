@@ -336,7 +336,12 @@ async function onCopilotResponse(response: string): Promise<void> {
     }
   } catch (error) {
     console.error('TTS error:', error);
-    showError((error as Error).message);
+    // Only show error if it's not a user-initiated stop
+    if (!(error as Error).message.includes('stopped')) {
+      showError((error as Error).message);
+    }
+    isSpeaking = false;
+    setStopButtonVisible(false);
     await startWakewordDetection();
   }
 }

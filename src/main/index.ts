@@ -58,7 +58,7 @@ async function initializeCopilot(): Promise<void> {
 
     conversationManager = new ConversationManager(copilotClient, {
       maxHistoryLength: 20,
-      contextTimeout: 30000,
+      contextTimeout: 5 * 60 * 1000, // 5 minutes
     });
 
     // Register custom tools

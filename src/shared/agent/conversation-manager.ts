@@ -40,6 +40,7 @@ export class ConversationManager {
   private config: ConversationManagerConfig;
   private currentSession: ConversationSession | null = null;
   private contextTimeoutId: NodeJS.Timeout | null = null;
+  private isProcessing = false;
 
   constructor(client: CopilotClient, config: ConversationManagerConfig = {}) {
     this.client = client;
@@ -101,7 +102,9 @@ export class ConversationManager {
       this.startSession();
     }
 
-    this.resetContextTimeout();
+    // Pause timeout during processing to prevent session destruction
+    this.pauseContextTimeout();
+    this.isProcessing = true;
 
     // Add user message to history
     this.addMessage({
@@ -140,6 +143,10 @@ export class ConversationManager {
     } catch (error) {
       logger.error('Chat error', error);
       throw error;
+    } finally {
+      this.isProcessing = false;
+      // Resume timeout after processing completes
+      this.resetContextTimeout();
     }
   }
 
@@ -274,9 +281,21 @@ export class ConversationManager {
     });
   }
 
+  private pauseContextTimeout(): void {
+    if (this.contextTimeoutId) {
+      clearTimeout(this.contextTimeoutId);
+      this.contextTimeoutId = null;
+    }
+  }
+
   private resetContextTimeout(): void {
     if (this.contextTimeoutId) {
       clearTimeout(this.contextTimeoutId);
+    }
+
+    // Don't set timeout if we're actively processing
+    if (this.isProcessing) {
+      return;
     }
 
     this.contextTimeoutId = setTimeout(() => {
